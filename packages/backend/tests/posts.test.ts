@@ -143,6 +143,20 @@ describe('validation and auth helpers', () => {
 });
 
 describe('auth and post routes', () => {
+  // Purpose: Ensure registration normalizes and sanitizes email identity values before persistence.
+  test('sanitizes register identity input', async () => {
+    const registerResponse = await handler(
+      buildEvent({
+        httpMethod: 'POST',
+        path: '/api/register',
+        body: JSON.stringify({ email: '  ALICE@EXAMPLE.COM\n', password: 'password123', role: 'author' })
+      })
+    );
+
+    expect(registerResponse.statusCode).toBe(201);
+    expect(_LOCAL_USERS['alice@example.com']).toBeDefined();
+  });
+
   // Purpose: Enforce authentication requirement for creating a post.
   test('requires authentication to create post', async () => {
     const response = await handler(
@@ -154,6 +168,44 @@ describe('auth and post routes', () => {
     );
 
     expect(response.statusCode).toBe(401);
+  });
+
+  // Purpose: Strip unsafe control characters from stored post title and content.
+  test('sanitizes created post title and content', async () => {
+    await handler(
+      buildEvent({
+        httpMethod: 'POST',
+        path: '/api/register',
+        body: JSON.stringify({ email: 'author@example.com', password: 'password123', role: 'author' })
+      })
+    );
+
+    const loginResponse = await handler(
+      buildEvent({
+        httpMethod: 'POST',
+        path: '/api/login',
+        body: JSON.stringify({ email: 'author@example.com', password: 'password123' })
+      })
+    );
+
+    const token = String(parseBody(loginResponse).token);
+    const createResponse = await handler(
+      buildEvent({
+        httpMethod: 'POST',
+        path: '/api/posts',
+        body: JSON.stringify({
+          title: '  Hello\nWorld  ',
+          content: 'Body before\u0000after',
+          published: true
+        }),
+        headers: { Authorization: `Bearer ${token}` }
+      })
+    );
+
+    expect(createResponse.statusCode).toBe(201);
+    const body = parseBody(createResponse);
+    expect(body.title).toBe('Hello World');
+    expect(body.content).toBe('Body beforeafter');
   });
 
   // Purpose: Validate end-to-end auth flow for register/login and post creation with author attribution.
@@ -347,6 +399,22 @@ describe('auth and post routes', () => {
         }
       ]
     });
+  });
+
+  // Purpose: Return a stable 500 response when unexpected storage failures occur.
+  test('returns 500 for unexpected handler errors', async () => {
+    process.env.USE_IN_MEMORY_LOCAL = 'false';
+    process.env.DYNAMODB_ENDPOINT_URL = 'http://127.0.0.1:9';
+
+    const response = await handler(
+      buildEvent({
+        httpMethod: 'GET',
+        path: '/api/posts'
+      })
+    );
+
+    expect(response.statusCode).toBe(500);
+    expect(parseBody(response).message).toBe('internal server error');
   });
 
   // Purpose: Surface a clear message when You.com rejects the configured key.

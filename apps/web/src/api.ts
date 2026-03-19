@@ -263,7 +263,17 @@ export async function register(payload: AuthPayload): Promise<void> {
   });
 
   if (!response.ok) {
-    throw new Error('Failed to register');
+    const backendMessage = await readErrorMessage(response);
+
+    if (response.status === 409) {
+      throw new Error('An account with this email already exists. Try logging in instead.');
+    }
+
+    if (backendMessage) {
+      throw new Error(`Couldn't create your account: ${backendMessage}`);
+    }
+
+    throw new Error(`Couldn't create your account (status ${response.status})`);
   }
 }
 
@@ -282,7 +292,17 @@ export async function login(payload: AuthPayload): Promise<string> {
   });
 
   if (!response.ok) {
-    throw new Error('Failed to login');
+    const backendMessage = await readErrorMessage(response);
+
+    if (response.status === 401) {
+      throw new Error('Invalid email or password. Please try again.');
+    }
+
+    if (backendMessage) {
+      throw new Error(`Login failed: ${backendMessage}`);
+    }
+
+    throw new Error(`Login failed (status ${response.status})`);
   }
 
   const data = (await response.json()) as { token: string };

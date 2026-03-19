@@ -138,4 +138,28 @@ describe('api role behavior', () => {
       'Premium AI request failed: premium ai beta is not configured'
     );
   });
+
+  // Purpose: Ensure registration conflict responses are mapped to a friendly account-exists message.
+  it('maps register conflict responses to a friendly message', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ message: 'username already exists' }, { status: 409 })
+    );
+    const { register } = await loadApiModule();
+
+    await expect(register({ email: 'author@example.com', password: 'password123', role: 'author' })).rejects.toThrow(
+      'An account with this email already exists. Try logging in instead.'
+    );
+  });
+
+  // Purpose: Ensure login unauthorized responses return a clear credentials message.
+  it('maps login unauthorized responses to invalid credentials guidance', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ message: 'invalid credentials' }, { status: 401 })
+    );
+    const { login } = await loadApiModule();
+
+    await expect(login({ email: 'author@example.com', password: 'wrong-password' })).rejects.toThrow(
+      'Invalid email or password. Please try again.'
+    );
+  });
 });

@@ -12,7 +12,7 @@ import {
 import { response } from './shared/http';
 import { ApiEvent, canonicalizePath, extractPostId, getPath, getQueryParams, parseBody, parseBool, parsePositiveInt } from './shared/request';
 import { normalizeItem, PostItem, toPostListItem } from './posts_domain/formatters';
-import { validateCredentials, validatePostPayload } from './posts_domain/validation';
+import { sanitizePostContent, sanitizeSingleLineInput, validateCredentials, validatePostPayload } from './posts_domain/validation';
 
 export const TOKEN_TTL_SECONDS = DEFAULT_TOKEN_TTL_SECONDS;
 export const DEFAULT_POSTS_PAGE = 1;
@@ -599,7 +599,7 @@ function validateAuthPayload(payload: Record<string, unknown>): [boolean, string
  */
 function normalizeIdentity(payload: Record<string, unknown>): string {
   const rawIdentity = payload.email ?? payload.username;
-  return String(rawIdentity ?? '').trim().toLowerCase();
+  return sanitizeSingleLineInput(rawIdentity).toLowerCase();
 }
 
 /**
@@ -888,8 +888,8 @@ async function handleCreatePost(event: ApiEvent) {
   const createdAt = new Date().toISOString();
   const item: Record<string, unknown> = {
     id: randomUUID(),
-    title: String(payload.title).trim(),
-    content: String(payload.content).trim(),
+    title: sanitizeSingleLineInput(payload.title),
+    content: sanitizePostContent(payload.content),
     createdAt,
     author: username,
     published: typeof payload.published === 'boolean' ? payload.published : true
@@ -954,8 +954,8 @@ async function handleUpdatePost(event: ApiEvent, postId: string) {
 
   const updatedItem: Record<string, unknown> = {
     ...existingItem,
-    title: String(payload.title).trim(),
-    content: String(payload.content).trim(),
+    title: sanitizeSingleLineInput(payload.title),
+    content: sanitizePostContent(payload.content),
     author: existingAuthor,
     published: typeof payload.published === 'boolean' ? payload.published : normalizeItem(existingItem).published
   };
@@ -1033,50 +1033,62 @@ async function handleDeletePost(event: ApiEvent, postId: string) {
 export async function handler(event: ApiEvent): Promise<{ statusCode: number; headers: Record<string, string>; body: string }> {
   const method = event.httpMethod ?? '';
   const path = canonicalizePath(getPath(event));
-  const endpointUrl = (process.env.DYNAMODB_ENDPOINT_URL ?? '').trim() || '(empty)';
-  const useInMemoryLocal = process.env.USE_IN_MEMORY_LOCAL ?? 'true';
 
-  localLog(
-    `request method=${method} path=${path} storage=${storageMode()} LOCAL_DEV=${isLocalDev()} ` +
-      `USE_IN_MEMORY_LOCAL=${useInMemoryLocal} DYNAMODB_ENDPOINT_URL=${endpointUrl}`
-  );
+  try {
+    const endpointUrl = (process.env.DYNAMODB_ENDPOINT_URL ?? '').trim() || '(empty)';
+    const useInMemoryLocal = process.env.USE_IN_MEMORY_LOCAL ?? 'true';
 
-  if (method === 'OPTIONS') {
-    return makeResponse(200, { ok: true });
+    localLog(
+      `request method=${method} path=${path} storage=${storageMode()} LOCAL_DEV=${isLocalDev()} ` +
+        `USE_IN_MEMORY_LOCAL=${useInMemoryLocal} DYNAMODB_ENDPOINT_URL=${endpointUrl}`
+    );
+
+    if (method === 'OPTIONS') {
+      return makeResponse(200, { ok: true });
+    }
+
+    if (method === 'GET' && path === '/api/posts') {
+      return await handleGetPosts(event);
+    }
+
+    const postId = extractPostId(path, event);
+    if (method === 'GET' && postId) {
+      return await handleGetPostById(event, postId);
+    }
+
+    if (method === 'POST' && path === '/api/register') {
+      return await handleRegister(event);
+    }
+
+    if (method === 'POST' && path === '/api/login') {
+      return await handleLogin(event);
+    }
+
+    if (method === 'POST' && path === '/api/posts') {
+      return await handleCreatePost(event);
+    }
+
+    if (method === 'POST' && path === '/api/posts/premium') {
+      return await handleCreatePremiumPost(event);
+    }
+
+    if (method === 'PUT' && postId) {
+      return await handleUpdatePost(event, postId);
+    }
+
+    if (method === 'DELETE' && postId) {
+      return await handleDeletePost(event, postId);
+    }
+
+    return makeResponse(405, { message: 'method not allowed' });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('posts-handler failure', {
+      method,
+      path,
+      message: (error as Error).message
+    });
+
+    return makeResponse(500, { message: 'internal server error' });
   }
-
-  if (method === 'GET' && path === '/api/posts') {
-    return handleGetPosts(event);
-  }
-
-  const postId = extractPostId(path, event);
-  if (method === 'GET' && postId) {
-    return handleGetPostById(event, postId);
-  }
-
-  if (method === 'POST' && path === '/api/register') {
-    return handleRegister(event);
-  }
-
-  if (method === 'POST' && path === '/api/login') {
-    return handleLogin(event);
-  }
-
-  if (method === 'POST' && path === '/api/posts') {
-    return handleCreatePost(event);
-  }
-
-  if (method === 'POST' && path === '/api/posts/premium') {
-    return handleCreatePremiumPost(event);
-  }
-
-  if (method === 'PUT' && postId) {
-    return handleUpdatePost(event, postId);
-  }
-
-  if (method === 'DELETE' && postId) {
-    return handleDeletePost(event, postId);
-  }
-
-  return makeResponse(405, { message: 'method not allowed' });
 }

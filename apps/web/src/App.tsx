@@ -4,6 +4,7 @@ import { createPost, deletePost, fetchMyPosts, fetchPostById, fetchPosts, login,
 import type { AiPreferences, BlogPost, UserRole } from './types';
 import type { Page, Theme } from './app/types';
 import Navbar from './components/navigation/Navbar';
+import { sanitizeAuthPayload, validateAuthInput } from './features/auth/validation';
 import { listGeminiGenerateContentModels } from './features/ai/client';
 import { clampNumber, AI_PREFERENCES_STORAGE_KEY, DEFAULT_GEMINI_MODELS, parseAiPreferences } from './features/ai/preferences';
 import { loadPostForEditing } from './features/posts/editing';
@@ -385,8 +386,14 @@ function App() {
     setIsAuthenticating(true);
 
     try {
-      await register({ email, password, role });
-      const authToken = await login({ email, password });
+      const validationError = validateAuthInput({ email, password, role });
+      if (validationError) {
+        throw new Error(validationError);
+      }
+
+      const sanitizedPayload = sanitizeAuthPayload({ email, password, role });
+      await register(sanitizedPayload);
+      const authToken = await login({ email: sanitizedPayload.email, password: sanitizedPayload.password });
       localStorage.setItem(TOKEN_STORAGE_KEY, authToken);
       setToken(authToken);
       setPassword('');
@@ -411,7 +418,13 @@ function App() {
     setIsAuthenticating(true);
 
     try {
-      const authToken = await login({ email, password });
+      const validationError = validateAuthInput({ email, password });
+      if (validationError) {
+        throw new Error(validationError);
+      }
+
+      const sanitizedPayload = sanitizeAuthPayload({ email, password });
+      const authToken = await login(sanitizedPayload);
       localStorage.setItem(TOKEN_STORAGE_KEY, authToken);
       setToken(authToken);
       setPassword('');

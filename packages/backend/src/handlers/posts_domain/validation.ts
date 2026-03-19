@@ -1,10 +1,38 @@
 /**
+ * Removes control characters and trims single-line user input.
+ */
+export function sanitizeSingleLineInput(value: unknown): string {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value
+    .normalize('NFKC')
+    .replace(/[\u0000-\u001F\u007F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Removes unsafe control characters while preserving markdown line breaks.
+ */
+export function sanitizePostContent(value: unknown): string {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value
+    .normalize('NFKC')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .trim();
+}
+
 /**
  * Validate create/update post input.
  */
 export function validatePostPayload(payload: Record<string, unknown>): [boolean, string] {
-  const title = payload.title;
-  const content = payload.content;
+  const title = sanitizeSingleLineInput(payload.title);
+  const content = sanitizePostContent(payload.content);
   const published = payload.published;
 
   if (typeof title !== 'string' || title.trim().length < 3) {
@@ -26,8 +54,8 @@ export function validatePostPayload(payload: Record<string, unknown>): [boolean,
  * Validate register/login credential payload.
  */
 export function validateCredentials(payload: Record<string, unknown>): [boolean, string] {
-  const identity = payload.email ?? payload.username;
-  const password = payload.password;
+  const identity = sanitizeSingleLineInput(payload.email ?? payload.username).toLowerCase();
+  const password = typeof payload.password === 'string' ? payload.password.trim() : payload.password;
   const role = payload.role;
 
   if (typeof identity !== 'string' || identity.trim().length < 3) {
