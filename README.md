@@ -117,6 +117,15 @@ Verify:
    - Optional: `PREMIUM_AI_MODEL=<model-name>`
    - Optional: `PREMIUM_AI_SYSTEM_PROMPT=<custom-prompt>`
 
+## Create `packages/backend/env.local.json` for local testing
+
+Before running local SAM commands, create `packages/backend/env.local.json` from the example file:
+
+- macOS/Linux: `cp packages/backend/env.local.json.example packages/backend/env.local.json`
+- Windows PowerShell: `Copy-Item packages/backend/env.local.json.example packages/backend/env.local.json`
+
+Then update placeholders in `packages/backend/env.local.json` (for example `AUTH_SECRET`, `INTERNAL_AI_API_KEY`, and `YOU_COM_SEARCH_API_KEY`) with your local values.
+
 ## Where to put premium backend keys (local vs AWS Lambda)
 
 This section is specific to premium backend AI mode (`POST /api/posts/premium`).
