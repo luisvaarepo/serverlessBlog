@@ -1,0 +1,1 @@
+C:\Users\Drako\source\repos\serverlessBlog\packages\backend\obj\Debug\backend.esproj.CoreCompileInputs.cache

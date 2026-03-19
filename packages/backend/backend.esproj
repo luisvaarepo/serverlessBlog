@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.VisualStudio.JavaScript.Sdk/1.0.784122">
+  <PropertyGroup>
+    <StartupCommand>pnpm --filter @serverless-blog/backend test</StartupCommand>
+    <JavaScriptTestRoot>tests</JavaScriptTestRoot>
+    <BuildCommand>pnpm --filter @serverless-blog/backend build</BuildCommand>
+    <ShouldRunNpmInstall>false</ShouldRunNpmInstall>
+  </PropertyGroup>
+  <ItemGroup>
+    <Folder Include="tests\" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,24 @@
+{
+  "name": "serverless-blog-platform",
+  "private": true,
+  "version": "1.0.0",
+  "packageManager": "pnpm@9.12.2",
+  "scripts": {
+    "build": "pnpm run build:web",
+    "dev": "pnpm run dev:web",
+    "test": "pnpm run test:web && pnpm run test:backend",
+    "test:web": "pnpm --filter @serverless-blog/web run --if-present test",
+    "test:backend": "pnpm --filter @serverless-blog/backend test",
+    "build:backend": "pnpm --filter @serverless-blog/backend build",
+    "dev:web": "pnpm --filter @serverless-blog/web dev",
+    "dev:api": "pnpm run build:backend && sam local start-api -t packages/backend/template.yaml --port 3000",
+    "dev:local:api": "pnpm run build:backend && sam local start-api -t packages/backend/template.yaml --port 3000 --env-vars packages/backend/env.local.json",
+    "dev:local:web": "pnpm run dev:web",
+    "dev:local": "pnpm dlx concurrently -k -n api,web -c yellow,cyan \"pnpm run dev:local:api\" \"pnpm run dev:local:web\"",
+    "build:web": "pnpm --filter @serverless-blog/web build",
+    "lint:web": "pnpm --filter @serverless-blog/web lint",
+    "cdk:synth": "pnpm --filter @serverless-blog/infra cdk synth",
+    "cdk:deploy": "pnpm --filter @serverless-blog/infra cdk deploy",
+    "cdk:destroy": "pnpm --filter @serverless-blog/infra cdk destroy"
+  }
+}

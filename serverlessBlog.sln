@@ -1,0 +1,70 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{54A90642-561A-4BB1-A94E-469ADEE60C69}") = "web", "apps\web\web.esproj", "{FE4C6CAA-5225-4B72-925E-A0F7DB6CD64F}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{8EC462FD-D22E-90A8-E5CE-7E832BA40C5D}"
+	ProjectSection(SolutionItems) = preProject
+		.env = .env
+		.env.example = .env.example
+		.gitignore = .gitignore
+		.github\instructions\backend.instructions.md = .github\instructions\backend.instructions.md
+		.github\copilot-instructions.md = .github\copilot-instructions.md
+		.github\instructions\frontend.instructions.md = .github\instructions\frontend.instructions.md
+		GITHUB_TO_AWS_DEPLOYMENT.md = GITHUB_TO_AWS_DEPLOYMENT.md
+		package.json = package.json
+		pnpm-lock.yaml = pnpm-lock.yaml
+		pnpm-workspace.yaml = pnpm-workspace.yaml
+		README.md = README.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "infra", "infra", "{E7626980-629A-44C2-9AC0-3950873952F3}"
+	ProjectSection(SolutionItems) = preProject
+		packages\infra\cdk.json = packages\infra\cdk.json
+		packages\infra\package.json = packages\infra\package.json
+		packages\infra\tsconfig.json = packages\infra\tsconfig.json
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "bin", "bin", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
+	ProjectSection(SolutionItems) = preProject
+		packages\infra\bin\blog-platform.d.ts = packages\infra\bin\blog-platform.d.ts
+		packages\infra\bin\blog-platform.js = packages\infra\bin\blog-platform.js
+		packages\infra\bin\blog-platform.ts = packages\infra\bin\blog-platform.ts
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "lib", "lib", "{2F2A2D38-69C5-4918-9807-D242BE80D116}"
+	ProjectSection(SolutionItems) = preProject
+		packages\infra\lib\blog-platform-stack.d.ts = packages\infra\lib\blog-platform-stack.d.ts
+		packages\infra\lib\blog-platform-stack.js = packages\infra\lib\blog-platform-stack.js
+		packages\infra\lib\blog-platform-stack.ts = packages\infra\lib\blog-platform-stack.ts
+	EndProjectSection
+EndProject
+Project("{54A90642-561A-4BB1-A94E-469ADEE60C69}") = "backend", "packages\backend\backend.esproj", "{A3097BD4-8487-5E5D-C154-6230D098D402}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FE4C6CAA-5225-4B72-925E-A0F7DB6CD64F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FE4C6CAA-5225-4B72-925E-A0F7DB6CD64F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A3097BD4-8487-5E5D-C154-6230D098D402}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A3097BD4-8487-5E5D-C154-6230D098D402}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A3097BD4-8487-5E5D-C154-6230D098D402}.Debug|Any CPU.Deploy.0 = Debug|Any CPU
+		{A3097BD4-8487-5E5D-C154-6230D098D402}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A3097BD4-8487-5E5D-C154-6230D098D402}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A3097BD4-8487-5E5D-C154-6230D098D402}.Release|Any CPU.Deploy.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{02EA681E-C7D8-13C7-8484-4AC65E1B71E8} = {E7626980-629A-44C2-9AC0-3950873952F3}
+		{2F2A2D38-69C5-4918-9807-D242BE80D116} = {E7626980-629A-44C2-9AC0-3950873952F3}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {DF7AEACA-8A68-4826-8E74-CC8F8B692DC2}
+	EndGlobalSection
+EndGlobal

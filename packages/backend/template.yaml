@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Local API emulation for blog Lambda
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 60
+    CodeUri: dist
+    Environment:
+      Variables:
+        LOCAL_DEV: "true"
+        USE_IN_MEMORY_LOCAL: "true"
+        DYNAMODB_ENDPOINT_URL: ""
+        POSTS_TABLE_NAME: BlogPosts
+        USERS_TABLE_NAME: BlogUsers
+        AUTH_SECRET: local-dev-secret
+        INTERNAL_AI_API_KEY: ""
+        YOU_COM_SEARCH_API_KEY: ""
+        YOU_COM_RESEARCH_MODE: standard
+        PREMIUM_AI_MODEL: gemini-2.0-flash
+        PREMIUM_AI_SYSTEM_PROMPT: ""
+  Api:
+    Cors:
+      AllowOrigin: "'*'"
+      AllowHeaders: "'*'"
+      AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+
+Resources:
+  PostsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers/posts.handler
+      Events:
+        RegisterUserApi:
+          Type: Api
+          Properties:
+            Path: /api/register
+            Method: post
+        RegisterUserApiOptions:
+          Type: Api
+          Properties:
+            Path: /api/register
+            Method: options
+        LoginUserApi:
+          Type: Api
+          Properties:
+            Path: /api/login
+            Method: post
+        LoginUserApiOptions:
+          Type: Api
+          Properties:
+            Path: /api/login
+            Method: options
+        PostsApiGet:
+          Type: Api
+          Properties:
+            Path: /api/posts
+            Method: get
+        PostsApiPost:
+          Type: Api
+          Properties:
+            Path: /api/posts
+            Method: post
+        PostsApiOptions:
+          Type: Api
+          Properties:
+            Path: /api/posts
+            Method: options
+        PremiumPostsApiPost:
+          Type: Api
+          Properties:
+            Path: /api/posts/premium
+            Method: post
+        PremiumPostsApiOptions:
+          Type: Api
+          Properties:
+            Path: /api/posts/premium
+            Method: options
+        SinglePostApiGet:
+          Type: Api
+          Properties:
+            Path: /api/posts/{id}
+            Method: get
+        SinglePostApiPut:
+          Type: Api
+          Properties:
+            Path: /api/posts/{id}
+            Method: put
+        SinglePostApiDelete:
+          Type: Api
+          Properties:
+            Path: /api/posts/{id}
+            Method: delete
+        SinglePostApiOptions:
+          Type: Api
+          Properties:
+            Path: /api/posts/{id}
+            Method: options
