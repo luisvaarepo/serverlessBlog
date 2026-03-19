@@ -106,16 +106,17 @@ describe('api role behavior', () => {
     ).rejects.toThrow('Only the post author can edit this post.');
   });
 
-  // Purpose: Ensure premium AI draft requests are sent to the backend premium endpoint with auth.
-  it('sends premium AI draft request with topic and bearer token', async () => {
+  // Purpose: Ensure premium AI research requests are sent to the backend premium endpoint with auth.
+  it('sends premium AI research request with topic and bearer token', async () => {
     fetchMock.mockResolvedValueOnce(
-      jsonResponse({ markdown: '# Draft', sources: [] }, { status: 200 })
+      jsonResponse({ output: { content: 'Content is here', content_type: 'text', sources: [] } }, { status: 200 })
     );
-    const { generatePremiumPostDraft } = await loadApiModule();
+    const { generatePremiumPostResearch } = await loadApiModule();
 
-    const result = await generatePremiumPostDraft('Edge AI observability', 'author-token');
+    const result = await generatePremiumPostResearch('Edge AI observability', 'author-token');
 
-    expect(result.markdown).toBe('# Draft');
+    expect(result.output.content).toBe('Content is here');
+    expect(result.output.sources).toEqual([]);
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/posts/premium',
       expect.objectContaining({
@@ -131,9 +132,9 @@ describe('api role behavior', () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ message: 'premium ai beta is not configured' }, { status: 503 })
     );
-    const { generatePremiumPostDraft } = await loadApiModule();
+    const { generatePremiumPostResearch } = await loadApiModule();
 
-    await expect(generatePremiumPostDraft('Distributed systems', 'author-token')).rejects.toThrow(
+    await expect(generatePremiumPostResearch('Distributed systems', 'author-token')).rejects.toThrow(
       'Premium AI request failed: premium ai beta is not configured'
     );
   });

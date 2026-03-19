@@ -2,7 +2,7 @@ import MDEditor from '@uiw/react-md-editor';
 import { useState, type ChangeEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type SyntheticEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { generatePremiumPostDraft } from '../api';
+import { generatePremiumPostResearch } from '../api';
 import type { Page } from '../app/types';
 import { hasAiProviderApiKey, runAiPrompt } from '../features/ai/client';
 import type { AiPreferences } from '../types';
@@ -13,6 +13,45 @@ interface SelectionRange {
   start: number;
   end: number;
   text: string;
+}
+
+/**
+ * Builds a client-side generation prompt using backend premium research sources.
+ * @param topic User-selected post topic.
+ * @param content Provider content summary returned by backend research endpoint.
+ * @param sources Structured premium research sources returned by backend.
+ * @returns Prompt text suitable for the selected LLM provider.
+ */
+function buildPremiumResearchPrompt(
+  topic: string,
+  content: string,
+  sources: Array<{ title: string; url: string; snippets: string[] }>
+): string {
+  const sourceBlock = sources.length === 0
+    ? 'No external sources were returned.'
+    : sources
+      .map((source, index) => {
+        const snippetText = source.snippets.filter((snippet) => snippet.trim() !== '').join(' | ');
+        const snippet = snippetText ? `\nSummary: ${snippetText}` : '';
+        return `Source ${index + 1}: ${source.title} (${source.url})${snippet}`;
+      })
+      .join('\n\n');
+
+  return [
+    `Create a complete blog post in markdown about: ${topic}`,
+    'Use the provided research sources as factual support.',
+    'Output requirements:',
+    '- Use a compelling title as a markdown H1 line.',
+    '- Keep structure clear with short sections.',
+    '- Include a final "## Sources" section with markdown links from the source URLs.',
+    '- Return only the final blog post markdown.',
+    '',
+    'Research output content:',
+    content || 'No research summary content was returned.',
+    '',
+    'Research sources:',
+    sourceBlock
+  ].join('\n');
 }
 
 const AI_ACTION_LABELS: Record<AiAction, string> = {
@@ -220,13 +259,20 @@ function CreatePostPage({
       return;
     }
 
+    if (!hasProviderApiKey) {
+      setAiError('Set your selected AI provider API key in Preferences to generate a premium draft.');
+      return;
+    }
+
     setAiError('');
     setAiMessage('');
     setAiActionInProgress('create-premium');
 
     try {
-      const result = await generatePremiumPostDraft(trimmedTopic, token);
-      const parsed = parseGeneratedPost(result.markdown);
+      const research = await generatePremiumPostResearch(trimmedTopic, token);
+      const prompt = buildPremiumResearchPrompt(trimmedTopic, research.output.content, research.output.sources);
+      const generatedText = await runAiPrompt(aiPreferences, prompt);
+      const parsed = parseGeneratedPost(generatedText);
       if (parsed.title) {
         onSetTitle(parsed.title);
       } else if (!title.trim()) {
@@ -234,7 +280,7 @@ function CreatePostPage({
       }
 
       onSetContent(parsed.content);
-      setAiMessage('Premium AI beta draft applied.');
+      setAiMessage('Premium AI beta research applied and draft generated.');
     } catch (error) {
       setAiError((error as Error).message);
     } finally {
@@ -352,7 +398,7 @@ function CreatePostPage({
           <button
             type="button"
             className="rounded border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-200 dark:hover:bg-indigo-900"
-            disabled={!!aiActionInProgress || !topic.trim() || !token}
+            disabled={!!aiActionInProgress || !topic.trim() || !token || !hasProviderApiKey}
             onClick={() => {
               void handleCreateFromTopicPremium();
             }}

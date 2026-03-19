@@ -35,11 +35,8 @@ export class BlogPlatformStack extends Stack {
         POSTS_TABLE_NAME: postsTable.tableName,
         USERS_TABLE_NAME: usersTable.tableName,
         AUTH_SECRET: process.env.AUTH_SECRET ?? 'change-me-in-prod',
-        INTERNAL_AI_API_KEY: process.env.INTERNAL_AI_API_KEY ?? '',
         YOU_COM_SEARCH_API_KEY: process.env.YOU_COM_SEARCH_API_KEY ?? '',
-        YOU_COM_RESEARCH_MODE: process.env.YOU_COM_RESEARCH_MODE ?? 'standard',
-        PREMIUM_AI_MODEL: process.env.PREMIUM_AI_MODEL ?? 'gemini-2.0-flash',
-        PREMIUM_AI_SYSTEM_PROMPT: process.env.PREMIUM_AI_SYSTEM_PROMPT ?? ''
+        YOU_COM_RESEARCH_MODE: process.env.YOU_COM_RESEARCH_MODE ?? 'standard'
       }
     });
 
@@ -52,6 +49,54 @@ export class BlogPlatformStack extends Stack {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
         allowHeaders: apigateway.Cors.DEFAULT_HEADERS,
         allowMethods: apigateway.Cors.ALL_METHODS
+      }
+    });
+
+    /**
+     * Ensure API Gateway generated 4XX/5XX responses include CORS headers.
+     */
+    api.addGatewayResponse('Default4xxCors', {
+      type: apigateway.ResponseType.DEFAULT_4XX,
+      responseHeaders: {
+        'Access-Control-Allow-Origin': "'*'",
+        'Access-Control-Allow-Headers': "'*'",
+        'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'"
+      }
+    });
+
+    /**
+     * Ensure API Gateway generated 5XX responses include CORS headers.
+     */
+    api.addGatewayResponse('Default5xxCors', {
+      type: apigateway.ResponseType.DEFAULT_5XX,
+      responseHeaders: {
+        'Access-Control-Allow-Origin': "'*'",
+        'Access-Control-Allow-Headers': "'*'",
+        'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'"
+      }
+    });
+
+    /**
+     * Ensure API Gateway auth failure responses include CORS headers.
+     */
+    api.addGatewayResponse('UnauthorizedCors', {
+      type: apigateway.ResponseType.UNAUTHORIZED,
+      responseHeaders: {
+        'Access-Control-Allow-Origin': "'*'",
+        'Access-Control-Allow-Headers': "'*'",
+        'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'"
+      }
+    });
+
+    /**
+     * Ensure API Gateway access denied responses include CORS headers.
+     */
+    api.addGatewayResponse('AccessDeniedCors', {
+      type: apigateway.ResponseType.ACCESS_DENIED,
+      responseHeaders: {
+        'Access-Control-Allow-Origin': "'*'",
+        'Access-Control-Allow-Headers': "'*'",
+        'Access-Control-Allow-Methods': "'GET,POST,PUT,DELETE,OPTIONS'"
       }
     });
 

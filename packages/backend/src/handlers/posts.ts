@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import {
@@ -21,13 +19,10 @@ export const DEFAULT_POSTS_PAGE = 1;
 export const DEFAULT_POSTS_LIMIT = 10;
 export const MAX_POSTS_LIMIT = 50;
 export const POST_LIST_CONTENT_LIMIT = 200;
-export const PREMIUM_AI_DEFAULT_MODEL = 'gemini-2.5-flash';
 export const PREMIUM_AI_RESEARCH_RESULT_LIMIT = 5;
 export const PREMIUM_AI_RESEARCH_MODE_DEFAULT = 'standard';
+export const PREMIUM_AI_MAX_DURATION_MS = 24000;
 export const YOU_COM_RESEARCH_ENDPOINT = 'https://api.you.com/v1/research';
-export const PREMIUM_AI_SYSTEM_PROMPT_PLACEHOLDER_PATH = 'src/handlers/posts_domain/premiumSystemPrompt.md';
-export const PREMIUM_AI_SYSTEM_PROMPT_PLACEHOLDER_FALLBACK =
-  'Create an engaging blog post with this information';
 
 export const _LOCAL_POSTS: Array<Record<string, unknown>> = [];
 export const _LOCAL_USERS: Record<string, { passwordHash: string; role: 'author' | 'reader' }> = {};
@@ -38,44 +33,158 @@ export interface PremiumResearchSource {
   snippet: string;
 }
 
-export interface PremiumPostDraftResponse {
-  markdown: string;
+export interface PremiumResearchResult {
+  content: string;
   sources: PremiumResearchSource[];
 }
 
-let documentClient: DynamoDBDocumentClient | null = null;
+export interface PremiumOutputSource {
+  url: string;
+  title: string;
+  snippets: string[];
+}
 
 /**
- * Load the premium system prompt placeholder from a markdown file.
+ * Recursively collect non-empty string values from unknown payloads.
  */
-function loadPremiumSystemPromptPlaceholder(): string {
-  const candidatePaths = [
-    join(process.cwd(), PREMIUM_AI_SYSTEM_PROMPT_PLACEHOLDER_PATH),
-    join(__dirname, 'posts_domain', 'premiumSystemPrompt.md')
-  ];
+function collectTextValues(value: unknown, depth = 0): string[] {
+  if (depth > 5) {
+    return [];
+  }
 
-  for (const candidatePath of candidatePaths) {
-    if (!existsSync(candidatePath)) {
-      continue;
-    }
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    return normalized ? [normalized] : [];
+  }
 
-    const fileContent = readFileSync(candidatePath, 'utf8').trim();
-    if (fileContent) {
-      return fileContent;
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => collectTextValues(entry, depth + 1));
+  }
+
+  if (!value || typeof value !== 'object') {
+    return [];
+  }
+
+  return Object.values(value as Record<string, unknown>).flatMap((entry) => collectTextValues(entry, depth + 1));
+}
+
+/**
+ * Extract a readable snippet from a normalized source candidate.
+ */
+function extractSnippet(entry: Record<string, unknown>): string {
+  const directSnippet = firstNonEmptyString([
+    entry.snippet,
+    entry.description,
+    entry.summary,
+    entry.excerpt,
+    entry.text,
+    entry.content,
+    entry.abstract,
+    entry.body,
+    entry.caption,
+    entry.preview,
+    entry.note,
+    (entry.source as Record<string, unknown> | undefined)?.snippet,
+    (entry.source as Record<string, unknown> | undefined)?.summary,
+    (entry.source as Record<string, unknown> | undefined)?.description,
+    (entry.source as Record<string, unknown> | undefined)?.content,
+    (entry.document as Record<string, unknown> | undefined)?.snippet,
+    (entry.document as Record<string, unknown> | undefined)?.summary,
+    (entry.document as Record<string, unknown> | undefined)?.description,
+    (entry.document as Record<string, unknown> | undefined)?.content,
+    (entry.page as Record<string, unknown> | undefined)?.snippet,
+    (entry.page as Record<string, unknown> | undefined)?.summary,
+    (entry.page as Record<string, unknown> | undefined)?.description,
+    (entry.page as Record<string, unknown> | undefined)?.content
+  ]);
+
+  if (directSnippet) {
+    return directSnippet;
+  }
+
+  const nestedCandidates = collectTextValues([
+    entry.highlights,
+    entry.highlight,
+    entry.snippets,
+    entry.passages,
+    entry.document,
+    entry.source,
+    entry.page
+  ]);
+
+  return nestedCandidates.find((candidate) => candidate.length > 20) ?? nestedCandidates[0] ?? '';
+}
+
+/**
+ * Return the first non-empty string in a candidate list.
+ */
+function firstNonEmptyString(values: unknown[]): string {
+  for (const value of values) {
+    const normalized = String(value ?? '').trim();
+    if (normalized) {
+      return normalized;
     }
   }
 
-  return PREMIUM_AI_SYSTEM_PROMPT_PLACEHOLDER_FALLBACK;
+  return '';
 }
-
-export const PREMIUM_AI_SYSTEM_PROMPT_PLACEHOLDER = loadPremiumSystemPromptPlaceholder();
 
 /**
- * Read the internal premium AI API key from environment variables.
+ * Build a readable fallback title from a source URL.
  */
-function getPremiumAiApiKey(): string {
-  return (process.env.INTERNAL_AI_API_KEY ?? '').trim();
+function titleFromUrl(url: string): string {
+  try {
+    const hostname = new URL(url).hostname.replace(/^www\./i, '').trim();
+    return hostname || url;
+  } catch {
+    return url;
+  }
 }
+
+/**
+ * Recursively collect nested objects that look like source entries.
+ */
+function collectNestedSourceEntries(value: unknown, depth = 0): Array<Record<string, unknown>> {
+  if (depth > 6) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectNestedSourceEntries(item, depth + 1));
+  }
+
+  if (!value || typeof value !== 'object') {
+    return [];
+  }
+
+  const entry = value as Record<string, unknown>;
+  const hasUrlLikeField = firstNonEmptyString([
+    entry.url,
+    entry.link,
+    entry.href,
+    entry.sourceUrl,
+    entry.source_url,
+    entry.webUrl,
+    entry.web_url
+  ]) !== '';
+
+  const collected = hasUrlLikeField ? [entry] : [];
+  for (const nestedValue of Object.values(entry)) {
+    collected.push(...collectNestedSourceEntries(nestedValue, depth + 1));
+  }
+
+  return collected;
+}
+
+export interface PremiumPostResearchResponse {
+  output: {
+    content: string;
+    content_type: 'text';
+    sources: PremiumOutputSource[];
+  };
+}
+
+let documentClient: DynamoDBDocumentClient | null = null;
 
 /**
  * Read the internal You.com search API key from environment variables.
@@ -85,10 +194,27 @@ function getYouSearchApiKey(): string {
 }
 
 /**
- * Resolve the model used for premium AI generation.
+ * Build output content from normalized sources when provider content is unavailable.
  */
-function getPremiumAiModel(): string {
-  return (process.env.PREMIUM_AI_MODEL ?? PREMIUM_AI_DEFAULT_MODEL).trim() || PREMIUM_AI_DEFAULT_MODEL;
+function buildFallbackResearchContent(sources: PremiumResearchSource[]): string {
+  if (sources.length === 0) {
+    return '';
+  }
+
+  return sources
+    .map((source, index) => `${index + 1}. ${source.title}: ${source.snippet}`)
+    .join('\n');
+}
+
+/**
+ * Convert normalized source entries to premium response source shape.
+ */
+function toPremiumOutputSources(sources: PremiumResearchSource[]): PremiumOutputSource[] {
+  return sources.map((source) => ({
+    url: source.url,
+    title: source.title,
+    snippets: [source.snippet || `Source: ${source.title}`]
+  }));
 }
 
 /**
@@ -100,13 +226,22 @@ function getYouResearchMode(): string {
 }
 
 /**
- * Resolve the premium system prompt, using a temporary placeholder until final prompt is provided.
+ * Run an async operation with a time budget and reject when it takes too long.
  */
-function getPremiumAiSystemPrompt(): string {
-  const configuredPrompt = process.env.PREMIUM_AI_SYSTEM_PROMPT?.trim();
-  return configuredPrompt && configuredPrompt.length > 0
-    ? configuredPrompt
-    : PREMIUM_AI_SYSTEM_PROMPT_PLACEHOLDER;
+function withTimeout<T>(operation: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+
+    operation
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
 }
 
 /**
@@ -120,18 +255,38 @@ function normalizeYouSearchSources(results: unknown): PremiumResearchSource[] {
   return results
     .map((entry) => entry as Record<string, unknown>)
     .map((entry) => {
-      const title = String(entry.title ?? entry.name ?? '').trim();
-      const url = String(entry.url ?? entry.link ?? '').trim();
-      const snippet = String(entry.snippet ?? entry.description ?? '').trim();
+      const url = firstNonEmptyString([
+        entry.url,
+        entry.link,
+        entry.href,
+        entry.sourceUrl,
+        entry.source_url,
+        entry.webUrl,
+        entry.web_url,
+        (entry.source as Record<string, unknown> | undefined)?.url,
+        (entry.document as Record<string, unknown> | undefined)?.url
+      ]);
 
-      if (!title || !url) {
+      const title = firstNonEmptyString([
+        entry.title,
+        entry.name,
+        entry.headline,
+        entry.sourceName,
+        entry.source_name,
+        (entry.source as Record<string, unknown> | undefined)?.title,
+        (entry.document as Record<string, unknown> | undefined)?.title
+      ]) || titleFromUrl(url);
+
+      const snippet = extractSnippet(entry);
+
+      if (!url) {
         return null;
       }
 
       return {
         title,
         url,
-        snippet
+        snippet: snippet || `Source: ${title}`
       };
     })
     .filter((entry): entry is PremiumResearchSource => entry !== null)
@@ -139,9 +294,16 @@ function normalizeYouSearchSources(results: unknown): PremiumResearchSource[] {
 }
 
 /**
+ * Expose source normalization for tests.
+ */
+export function _normalizeYouSearchSources(results: unknown): PremiumResearchSource[] {
+  return normalizeYouSearchSources(results);
+}
+
+/**
  * Execute a You.com research request for the provided topic.
  */
-async function fetchYouResearchSources(topic: string, apiKey: string): Promise<PremiumResearchSource[]> {
+async function fetchYouResearchSources(topic: string, apiKey: string): Promise<PremiumResearchResult> {
   const requestBody = JSON.stringify({
     body: {
       input: '',
@@ -207,6 +369,13 @@ async function fetchYouResearchSources(topic: string, apiKey: string): Promise<P
   }
 
   const payload = (await researchResponse.json()) as {
+    output?: {
+      content?: unknown;
+      text?: unknown;
+      summary?: unknown;
+      answer?: unknown;
+      sources?: unknown;
+    };
     hits?: unknown;
     results?: unknown;
     sources?: unknown;
@@ -218,6 +387,20 @@ async function fetchYouResearchSources(topic: string, apiKey: string): Promise<P
     };
   };
 
+  const outputContent = firstNonEmptyString([
+    payload.output?.content,
+    payload.output?.text,
+    payload.output?.summary,
+    payload.output?.answer
+  ]);
+  const outputSources = normalizeYouSearchSources(payload.output?.sources);
+  if (outputSources.length > 0) {
+    return {
+      content: outputContent || buildFallbackResearchContent(outputSources),
+      sources: outputSources
+    };
+  }
+
   const candidates = payload.hits
     ?? payload.results
     ?? payload.sources
@@ -225,138 +408,27 @@ async function fetchYouResearchSources(topic: string, apiKey: string): Promise<P
     ?? payload.data?.results
     ?? payload.data?.sources
     ?? payload.data?.items;
-  return normalizeYouSearchSources(candidates);
-}
 
-/**
- * Build a plain-text research digest from source results for the generation prompt.
- */
-function buildResearchDigest(sources: PremiumResearchSource[]): string {
-  if (sources.length === 0) {
-    return 'No external research sources were returned.';
+  const directSources = normalizeYouSearchSources(candidates);
+  if (directSources.length > 0) {
+    return {
+      content: outputContent || buildFallbackResearchContent(directSources),
+      sources: directSources
+    };
   }
 
-  return sources
-    .map((source, index) => {
-      const sourceLabel = `Source ${index + 1}: ${source.title} (${source.url})`;
-      return source.snippet ? `${sourceLabel}\nSummary: ${source.snippet}` : sourceLabel;
-    })
-    .join('\n\n');
-}
-
-/**
- * Generate a markdown blog post with LangChain using the topic and research digest.
- */
-async function generatePremiumMarkdown(topic: string, sources: PremiumResearchSource[], apiKey: string): Promise<string> {
-  const formattedPrompt = [
-    getPremiumAiSystemPrompt(),
-    'Write a complete markdown blog post based on the requested topic and research.',
-    `Topic: ${topic}`,
-    'Research findings:',
-    buildResearchDigest(sources),
-    '',
-    'Requirements:',
-    '- Produce a strong markdown H1 title.',
-    '- Add informative sections with markdown headings.',
-    '- Use the research findings as support for claims.',
-    '- Include a final "## Sources" section listing cited URLs as markdown bullet links.',
-    '- Return only the markdown post body.'
-  ].join('\n');
-
-  try {
-    const { ChatGoogleGenerativeAI } = await import('@langchain/google-genai');
-
-    const model = new ChatGoogleGenerativeAI({
-      apiKey,
-      model: getPremiumAiModel(),
-      temperature: 0.7
-    });
-
-    const result = await model.invoke(formattedPrompt);
-    const output = typeof result.content === 'string'
-      ? result.content.trim()
-      : result.content
-        .map((chunk: unknown) => {
-          if (typeof chunk === 'string') {
-            return chunk;
-          }
-
-          if (chunk && typeof chunk === 'object' && 'text' in chunk) {
-            return String((chunk as { text?: unknown }).text ?? '');
-          }
-
-          return '';
-        })
-        .join('')
-        .trim();
-
-    if (!output) {
-      throw new Error('premium AI returned an empty response');
-    }
-
-    return output;
-  } catch (error) {
-    const reason = (error as Error).message;
-
-    if (reason.includes('@langchain/google-genai') || reason.toLowerCase().includes('cannot find module')) {
-      localLog(`premium-ai langchain module unavailable, falling back to direct Gemini API: ${reason}`);
-      return generatePremiumMarkdownWithGeminiApi(formattedPrompt, apiKey);
-    }
-
-    throw error;
-  }
-}
-
-/**
- * Generate markdown directly with Gemini API when LangChain runtime module is unavailable.
- */
-async function generatePremiumMarkdownWithGeminiApi(prompt: string, apiKey: string): Promise<string> {
-  const model = encodeURIComponent(getPremiumAiModel());
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: prompt }]
-        }
-      ],
-      generationConfig: {
-        temperature: 0.7
-      }
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error(`gemini fallback request failed with status ${response.status}`);
-  }
-
-  const payload = (await response.json()) as {
-    candidates?: Array<{
-      content?: {
-        parts?: Array<{ text?: string }>;
-      };
-    }>;
+  const nestedCandidates = collectNestedSourceEntries(payload);
+  const nestedSources = normalizeYouSearchSources(nestedCandidates);
+  return {
+    content: outputContent || buildFallbackResearchContent(nestedSources),
+    sources: nestedSources
   };
-
-  const output = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('').trim() ?? '';
-  if (!output) {
-    throw new Error('premium AI returned an empty response');
-  }
-
-  return output;
 }
 
 export const _premiumAiDependencies: {
-  fetchResearchSources: (topic: string, apiKey: string) => Promise<PremiumResearchSource[]>;
-  generateMarkdown: (topic: string, sources: PremiumResearchSource[], apiKey: string) => Promise<string>;
+  fetchResearchSources: (topic: string, apiKey: string) => Promise<PremiumResearchResult>;
 } = {
-  fetchResearchSources: fetchYouResearchSources,
-  generateMarkdown: generatePremiumMarkdown
+  fetchResearchSources: fetchYouResearchSources
 };
 
 /**
@@ -370,7 +442,7 @@ function localLog(message: string): void {
 }
 
 /**
- * Handle `POST /api/posts/premium` using internal AI and search keys for beta premium generation.
+ * Handle `POST /api/posts/premium` by returning You.com research sources for client-side premium generation.
  */
 async function handleCreatePremiumPost(event: ApiEvent) {
   const token = extractToken(event);
@@ -390,24 +462,32 @@ async function handleCreatePremiumPost(event: ApiEvent) {
     return makeResponse(400, { message: 'topic must be at least 3 characters' });
   }
 
-  const internalAiApiKey = getPremiumAiApiKey();
   const youSearchApiKey = getYouSearchApiKey();
-  if (!internalAiApiKey || !youSearchApiKey) {
+  if (!youSearchApiKey) {
     return makeResponse(503, { message: 'premium ai beta is not configured' });
   }
 
   try {
-    const sources = await _premiumAiDependencies.fetchResearchSources(topic, youSearchApiKey);
-    const markdown = await _premiumAiDependencies.generateMarkdown(topic, sources, internalAiApiKey);
+    return await withTimeout((async () => {
+      const research = await _premiumAiDependencies.fetchResearchSources(topic, youSearchApiKey);
 
-    const responsePayload: PremiumPostDraftResponse = {
-      markdown,
-      sources
-    };
+      const responsePayload: PremiumPostResearchResponse = {
+        output: {
+          content: research.content,
+          content_type: 'text',
+          sources: toPremiumOutputSources(research.sources)
+        }
+      };
 
-    return makeResponse(200, responsePayload);
+      return makeResponse(200, responsePayload);
+    })(), PREMIUM_AI_MAX_DURATION_MS, 'premium ai request');
   } catch (error) {
     const reason = (error as Error).message;
+
+    if (reason.startsWith('premium ai request timed out')) {
+      localLog(`premium-ai error: ${reason}`);
+      return makeResponse(504, { message: 'premium ai beta request timed out, please retry with a narrower topic' });
+    }
 
     if (reason.startsWith('you.com research unauthorized')) {
       localLog(`premium-ai error: ${reason}`);

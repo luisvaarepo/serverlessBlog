@@ -111,11 +111,8 @@ Verify:
    - `CDK_DEFAULT_ACCOUNT=<your-12-digit-aws-account-id>`
    - `CDK_DEFAULT_REGION=<your-aws-region>` (for example `us-east-1`)
    - `AUTH_SECRET=<strong-random-secret>`
-   - `INTERNAL_AI_API_KEY=<internal-llm-provider-key>` (backend-only)
    - `YOU_COM_SEARCH_API_KEY=<internal-you.com-search-key>` (backend-only)
    - `YOU_COM_RESEARCH_MODE=standard` (recommended to control cost)
-   - Optional: `PREMIUM_AI_MODEL=<model-name>`
-   - Optional: `PREMIUM_AI_SYSTEM_PROMPT=<custom-prompt>`
 
 ## Create `packages/backend/env.local.json` for local testing
 
@@ -124,7 +121,7 @@ Before running local SAM commands, create `packages/backend/env.local.json` from
 - macOS/Linux: `cp packages/backend/env.local.json.example packages/backend/env.local.json`
 - Windows PowerShell: `Copy-Item packages/backend/env.local.json.example packages/backend/env.local.json`
 
-Then update placeholders in `packages/backend/env.local.json` (for example `AUTH_SECRET`, `INTERNAL_AI_API_KEY`, and `YOU_COM_SEARCH_API_KEY`) with your local values.
+Then update placeholders in `packages/backend/env.local.json` (for example `AUTH_SECRET` and `YOU_COM_SEARCH_API_KEY`) with your local values.
 
 ## Where to put premium backend keys (local vs AWS Lambda)
 
@@ -136,14 +133,11 @@ When running `sam local start-api` with `--env-vars packages/backend/env.local.j
 
 For local premium mode, put these keys in `packages/backend/env.local.json` under `PostsFunction`:
 
-- `INTERNAL_AI_API_KEY`
 - `YOU_COM_SEARCH_API_KEY`
 - `YOU_COM_RESEARCH_MODE` (recommended: `standard`)
-- Optional: `PREMIUM_AI_MODEL`
-- Optional: `PREMIUM_AI_SYSTEM_PROMPT`
 
 Example:
-`{"PostsFunction":{"LOCAL_DEV":"true","USE_IN_MEMORY_LOCAL":"false","DYNAMODB_ENDPOINT_URL":"http://host.docker.internal:8000","POSTS_TABLE_NAME":"BlogPosts","USERS_TABLE_NAME":"BlogUsers","AUTH_SECRET":"<secret>","INTERNAL_AI_API_KEY":"<gemini-key>","YOU_COM_SEARCH_API_KEY":"<you-key>","YOU_COM_RESEARCH_MODE":"standard","PREMIUM_AI_MODEL":"gemini-2.0-flash","PREMIUM_AI_SYSTEM_PROMPT":""}}`
+`{"PostsFunction":{"LOCAL_DEV":"true","USE_IN_MEMORY_LOCAL":"false","DYNAMODB_ENDPOINT_URL":"http://host.docker.internal:8000","POSTS_TABLE_NAME":"BlogPosts","USERS_TABLE_NAME":"BlogUsers","AUTH_SECRET":"<secret>","YOU_COM_SEARCH_API_KEY":"<you-key>","YOU_COM_RESEARCH_MODE":"standard"}}`
 
 Important: setting keys only in repository root `.env` does **not** automatically make them available to local SAM unless they are also present in `env.local.json` (or passed through another SAM env-var mechanism).
 
@@ -161,11 +155,8 @@ In this repo, `packages/infra/lib/blog-platform-stack.ts` sets Lambda env vars f
 So for AWS deployment:
 
 1. Ensure these are set in the shell environment used to run `pnpm run cdk:deploy` (or present in root `.env` if your shell/process loads it):
-   - `INTERNAL_AI_API_KEY`
    - `YOU_COM_SEARCH_API_KEY`
    - `YOU_COM_RESEARCH_MODE=standard`
-   - Optional: `PREMIUM_AI_MODEL`
-   - Optional: `PREMIUM_AI_SYSTEM_PROMPT`
 2. Run deployment: `pnpm run cdk:deploy`
 
 After deploy, those values are stored in Lambda environment variables and used by the backend at runtime.
@@ -177,24 +168,22 @@ The app includes AI-aided generation for post drafting and rewriting.
 ### Premium AI beta mode
 
 - Premium mode complements BYOK mode and does not replace it.
-- It runs on the backend using internal keys and a LangChain Gemini LLM flow.
-- Research is collected with You.com Research API before writing the draft, then Gemini generates the final markdown post.
+- It runs as a hybrid flow: backend research + frontend generation.
+- Research is collected with You.com Research API in the backend, then the frontend uses the selected BYOK provider to generate the markdown post.
 - Current route: `POST /api/posts/premium` with `{ "topic": "..." }`.
-- The premium system prompt currently uses a placeholder and can be replaced later with `PREMIUM_AI_SYSTEM_PROMPT`.
 
 What premium mode does end-to-end:
 1. Validates authenticated user and input topic.
 2. Calls You.com Research API to gather research context/sources.
-3. Builds a research digest.
-4. Calls Gemini to generate a complete markdown draft.
-5. Returns `{ markdown, sources }`.
+3. Returns `{ output: { content, content_type, sources[] } }` to the frontend.
+4. Frontend builds a prompt using the returned content and sources.
+5. Frontend calls the selected BYOK model to generate markdown.
 
 ### Premium backend configuration
 
-Premium backend requires both keys:
+Premium backend requires this key:
 
 - `YOU_COM_SEARCH_API_KEY`: used for You.com research calls.
-- `INTERNAL_AI_API_KEY`: used for Gemini generation calls.
 
 Use `YOU_COM_RESEARCH_MODE` to control quality/latency/cost:
 
@@ -208,10 +197,7 @@ Use `YOU_COM_RESEARCH_MODE` to control quality/latency/cost:
 Set these backend env vars:
 
 - `YOU_COM_SEARCH_API_KEY=<you.com-research-api-key>`
-- `INTERNAL_AI_API_KEY=<gemini-api-key>`
 - `YOU_COM_RESEARCH_MODE=standard` (or `lite`, `deep`, `exhaustive`)
-- Optional: `PREMIUM_AI_MODEL=gemini-2.5-flash`
-- Optional: `PREMIUM_AI_SYSTEM_PROMPT=<custom-prompt>`
 
 Where to set them:
 

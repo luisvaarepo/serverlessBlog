@@ -237,13 +237,16 @@ interface AuthPayload {
   role?: UserRole;
 }
 
-export interface PremiumPostDraftResult {
-  markdown: string;
-  sources: Array<{
-    title: string;
-    url: string;
-    snippet: string;
-  }>;
+export interface PremiumPostResearchResult {
+  output: {
+    content: string;
+    content_type: string;
+    sources: Array<{
+      title: string;
+      url: string;
+      snippets: string[];
+    }>;
+  };
 }
 
 /**
@@ -320,12 +323,12 @@ export async function createPost(payload: Pick<BlogPost, 'title' | 'content' | '
 }
 
 /**
- * Generates a premium AI markdown draft using backend-managed credentials.
+ * Fetches premium AI research sources from the backend.
  * @param topic High-level post idea provided by the user.
  * @param token Bearer token for authenticated user.
- * @returns Generated markdown draft and normalized research sources.
+ * @returns Normalized research sources for client-side blog generation.
  */
-export async function generatePremiumPostDraft(topic: string, token: string): Promise<PremiumPostDraftResult> {
+export async function generatePremiumPostResearch(topic: string, token: string): Promise<PremiumPostResearchResult> {
   const response = await apiFetch('/posts/premium', {
     method: 'POST',
     headers: {

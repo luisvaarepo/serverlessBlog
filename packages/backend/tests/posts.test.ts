@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import {
   _createAccessToken,
   _premiumAiDependencies,
+  _normalizeYouSearchSources,
   _decodeAccessToken,
   _LOCAL_POSTS,
   _LOCAL_USERS,
@@ -47,8 +48,7 @@ beforeEach(() => {
     delete _LOCAL_USERS[key];
   }
 
-  _premiumAiDependencies.fetchResearchSources = async () => [];
-  _premiumAiDependencies.generateMarkdown = async () => '# Premium draft\n\nGenerated content.';
+  _premiumAiDependencies.fetchResearchSources = async () => ({ content: '', sources: [] });
 });
 
 describe('validation and auth helpers', () => {
@@ -77,6 +77,68 @@ describe('validation and auth helpers', () => {
   // Purpose: Confirm local development mode selects in-memory storage when no DynamoDB endpoint is configured.
   test('uses in-memory storage when local and endpoint is empty', () => {
     expect(useInMemoryStorage()).toBe(true);
+  });
+
+  // Purpose: Normalize source entries even when You.com schema uses alternate fields.
+  test('normalizes research entries with alternate url and missing title fields', () => {
+    const sources = _normalizeYouSearchSources([
+      {
+        link: 'https://example.com/article',
+        summary: 'Useful summary text.'
+      }
+    ]);
+
+    expect(sources).toEqual([
+      {
+        title: 'example.com',
+        url: 'https://example.com/article',
+        snippet: 'Useful summary text.'
+      }
+    ]);
+  });
+
+  // Purpose: Normalize nested source fields used by some provider payload variants.
+  test('normalizes research entries with nested source and document fields', () => {
+    const sources = _normalizeYouSearchSources([
+      {
+        source: {
+          url: 'https://example.org/deep-dive',
+          title: 'Deep Dive'
+        },
+        document: {
+          snippet: 'Detailed analysis.'
+        }
+      }
+    ]);
+
+    expect(sources).toEqual([
+      {
+        title: 'Deep Dive',
+        url: 'https://example.org/deep-dive',
+        snippet: 'Detailed analysis.'
+      }
+    ]);
+  });
+
+  // Purpose: Extract snippets from nested highlights arrays when direct snippet fields are missing.
+  test('normalizes research entries with nested highlight text', () => {
+    const sources = _normalizeYouSearchSources([
+      {
+        url: 'https://example.net/guide',
+        title: 'Guide',
+        highlights: [
+          { text: 'This is a nested highlight snippet with enough detail to be useful.' }
+        ]
+      }
+    ]);
+
+    expect(sources).toEqual([
+      {
+        title: 'Guide',
+        url: 'https://example.net/guide',
+        snippet: 'This is a nested highlight snippet with enough detail to be useful.'
+      }
+    ]);
   });
 });
 
@@ -248,20 +310,20 @@ describe('auth and post routes', () => {
     expect(parseBody(response).message).toBe('topic must be at least 3 characters');
   });
 
-  // Purpose: Return generated premium markdown and research sources when internal services succeed.
-  test('generates premium AI draft using internal providers', async () => {
-    process.env.INTERNAL_AI_API_KEY = 'internal-ai-key';
+  // Purpose: Return normalized premium research sources when backend research succeeds.
+  test('returns premium AI research sources', async () => {
     process.env.YOU_COM_SEARCH_API_KEY = 'you-search-key';
 
-    _premiumAiDependencies.fetchResearchSources = async () => [
-      {
-        title: 'Research article',
-        url: 'https://example.com/research',
-        snippet: 'Evidence summary.'
-      }
-    ];
-    _premiumAiDependencies.generateMarkdown = async () => '# Premium Post\n\nDraft body.';
-
+    _premiumAiDependencies.fetchResearchSources = async () => ({
+      content: 'Content is here',
+      sources: [
+        {
+          title: 'Research article',
+          url: 'https://example.com/research',
+          snippet: 'Evidence summary.'
+        }
+      ]
+    });
     const token = _createAccessToken('author@example.com');
     const response = await handler(
       buildEvent({
@@ -274,19 +336,21 @@ describe('auth and post routes', () => {
 
     expect(response.statusCode).toBe(200);
     const body = parseBody(response);
-    expect(body.markdown).toContain('Premium Post');
-    expect(body.sources).toEqual([
-      {
-        title: 'Research article',
-        url: 'https://example.com/research',
-        snippet: 'Evidence summary.'
-      }
-    ]);
+    expect(body.output).toEqual({
+      content: 'Content is here',
+      content_type: 'text',
+      sources: [
+        {
+          title: 'Research article',
+          url: 'https://example.com/research',
+          snippets: ['Evidence summary.']
+        }
+      ]
+    });
   });
 
   // Purpose: Surface a clear message when You.com rejects the configured key.
   test('returns actionable message when You.com key is rejected', async () => {
-    process.env.INTERNAL_AI_API_KEY = 'internal-ai-key';
     process.env.YOU_COM_SEARCH_API_KEY = 'invalid-you-key';
 
     _premiumAiDependencies.fetchResearchSources = async () => {
@@ -309,7 +373,6 @@ describe('auth and post routes', () => {
 
   // Purpose: Surface a clear message when You.com endpoint rejects research method.
   test('returns actionable message when You.com research returns method not allowed', async () => {
-    process.env.INTERNAL_AI_API_KEY = 'internal-ai-key';
     process.env.YOU_COM_SEARCH_API_KEY = 'you-key';
 
     _premiumAiDependencies.fetchResearchSources = async () => {
@@ -328,6 +391,28 @@ describe('auth and post routes', () => {
 
     expect(response.statusCode).toBe(502);
     expect(parseBody(response).message).toContain('405');
+  });
+
+  // Purpose: Return a controlled timeout response before API Gateway integration timeout is reached.
+  test('returns 504 when premium processing exceeds internal timeout budget', async () => {
+    process.env.YOU_COM_SEARCH_API_KEY = 'you-key';
+
+    _premiumAiDependencies.fetchResearchSources = async () => {
+      throw new Error('premium ai request timed out after 24000ms');
+    };
+
+    const token = _createAccessToken('author@example.com');
+    const response = await handler(
+      buildEvent({
+        httpMethod: 'POST',
+        path: '/api/posts/premium',
+        body: JSON.stringify({ topic: 'Distributed systems' }),
+        headers: { Authorization: `Bearer ${token}` }
+      })
+    );
+
+    expect(response.statusCode).toBe(504);
+    expect(parseBody(response).message).toContain('timed out');
   });
 
 });
