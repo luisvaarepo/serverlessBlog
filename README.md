@@ -179,6 +179,13 @@ What premium mode does end-to-end:
 4. Frontend builds a prompt using the returned content and sources.
 5. Frontend calls the selected BYOK model to generate markdown.
 
+Premium was intended to be generated all in the backen, but due to the hard limit of 29s of the AWS Api Gateway + Lambda combination, the generation step is done in the frontend to allow for longer-running research calls and more flexible provider options.
+a Work around is 
+    a) to trigger the research in a independant lambda function and store the results in the DB, and then procede to generate the post.
+    or
+    b) Use sockets to keep the connection alive during the research phase, but this adds complexity and cost.
+
+
 ### Premium backend configuration
 
 Premium backend requires this key:
